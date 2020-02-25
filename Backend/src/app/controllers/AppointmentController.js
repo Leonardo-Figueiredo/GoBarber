@@ -6,6 +6,9 @@ import User from '../models/User';
 import Appointment from '../models/Appointments';
 import Notification from '../schemas/Notification';
 
+import CancellationMail from '../jobs/CancellationMail';
+import Queue from '../../lib/Queue';
+
 class AppointmentController {
   async index(req, res) {
     const schema = Yup.object().shape({
@@ -124,7 +127,20 @@ class AppointmentController {
   }
 
   async delete(req, res) {
-    const appointment = await Appointment.findByPk(req.params.id);
+    const appointment = await Appointment.findByPk(req.params.id, {
+      include: [
+        {
+          model: User,
+          as: 'provider',
+          attributes: ['name', 'email'],
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['name'],
+        },
+      ],
+    });
 
     if (!appointment) {
       return res.status(404).json({ error: 'Appointment ID not found.' });
@@ -147,6 +163,10 @@ class AppointmentController {
     appointment.canceled_at = new Date();
 
     await appointment.save();
+
+    await Queue.add(CancellationMail.key, {
+      appointment,
+    });
 
     return res.json(appointment);
   }
